@@ -24,6 +24,8 @@ typedef enum : NSUInteger {
 @property (assign, nonatomic) id<AXTabBarDelegate> delegate;
 @property (strong, nonatomic) UIFont *tabBarButtonFont;
 
+@property (copy, nonatomic) NSArray *tabBarItemButtons;
+
 // TODO: implement this style option.
 //@property (nonatomic) AXTabBarStyle tabBarStyle;
 @end

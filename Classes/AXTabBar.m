@@ -9,7 +9,6 @@
 @interface AXTabBar ()
 @property (readonly, nonatomic) UIScrollView *containerView;
 @property (readonly, nonatomic) UIToolbar *toolbar;
-@property (copy, nonatomic) NSArray *tabBarItemButtons;
 @end
 
 @implementation AXTabBar {
@@ -27,6 +26,7 @@
     
     _toolbar = [[UIToolbar alloc] init];
     _toolbar.userInteractionEnabled = NO;
+    _toolbar.barTintColor = [UIColor colorWithRed:35/255.0f green:35/255.0f blue:35/255.0f alpha:1.0f];
     [self addSubview:_toolbar];
     
     _containerView = [[UIScrollView alloc] init];
@@ -40,7 +40,7 @@
     [self.layer addSublayer:_bottomSeparator];
 
     _indicatorLayer = [CALayer layer];
-    [self.layer addSublayer:_indicatorLayer];
+//    [self.layer addSublayer:_indicatorLayer];
   }
   return self;
 }
@@ -82,8 +82,8 @@
   [super sizeToFit];
   [self setBounds:(CGRect){
     CGPointZero,
-    CGRectGetWidth([[UIApplication sharedApplication] statusBarFrame]),
-    44.0
+      [[UIScreen mainScreen] bounds].size.width,
+    75.0
   }];
 }
 
@@ -125,12 +125,20 @@
     
     NSUInteger beforeIndex = [_items indexOfObject:_selectedItem];
     NSUInteger afterIndex = [_items indexOfObject:selectedItem];
+    AXTabBarItemButton *button;
     if (beforeIndex != NSNotFound) {
+      if (_selectedItem.selectedImage) {
+        button = _tabBarItemButtons[beforeIndex];
+        [button setImage:_selectedItem.image forState:UIControlStateNormal];
+      }
       [_tabBarItemButtons[beforeIndex] setSelected:NO];
     }
     if (afterIndex != NSNotFound) {
       AXTabBarItemButton *button = _tabBarItemButtons[afterIndex];
       _selectedItem = selectedItem;
+      if (_selectedItem.selectedImage) {
+        [button setImage:_selectedItem.selectedImage forState:UIControlStateNormal];
+      }
       [button setSelected:YES];
       
       [self layoutIndicatorLayerWithButton:button];

@@ -15,6 +15,23 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
   CGFloat _headerViewTopConstraintConstant;
 }
 
+- (id)initWithCoder:(NSCoder *)aDecoder {
+    self = [super initWithCoder:aDecoder];
+    if (self) {
+        // Custom initialization
+        _shouldBounceHeaderView = YES;
+        
+        _tabBar = [[AXTabBar alloc] init];
+        [_tabBar setDelegate:self];
+        
+        UINib *nib = [UINib nibWithNibName:NSStringFromClass([AXStretchableHeaderTabViewController class]) bundle:nil];
+        UIView *subView = [[nib instantiateWithOwner:self options:nil] objectAtIndex:0];
+        
+        self.view = subView;
+    }
+    return self;
+}
+
 - (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
 {
   // MEMO:
@@ -53,15 +70,19 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
 - (void)viewDidLayoutSubviews
 {
   [super viewDidLayoutSubviews];
+    
+  //Animation when switch headerview should not reload (currently being use in change question)
+  if (_headerView.frame.origin.x != 320 && _headerView.frame.origin.x != -320) {
   
-  _headerView.topConstraint.constant = _headerViewTopConstraintConstant + _containerView.contentInset.top;
-  [_headerView setFrame:(CGRect){
-    0.0, 0.0,
-    CGRectGetWidth(self.view.bounds), _headerView.maximumOfHeight + _containerView.contentInset.top
-  }];
+    _headerView.topConstraint.constant = _headerViewTopConstraintConstant + _containerView.contentInset.top;
+    [_headerView setFrame:(CGRect){
+      0.0, 0.0,
+      CGRectGetWidth(self.view.bounds), _headerView.maximumOfHeight + _containerView.contentInset.top
+    }];
   
-  [self layoutHeaderViewAndTabBar];
-  [self layoutViewControllers];
+    [self layoutHeaderViewAndTabBar];
+    [self layoutViewControllers];
+  }
 }
 
 - (void)didReceiveMemoryWarning

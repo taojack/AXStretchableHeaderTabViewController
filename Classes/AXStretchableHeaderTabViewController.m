@@ -6,6 +6,11 @@
 #import "AXStretchableHeaderTabViewController.h"
 
 static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @"selectedIndex";
+static int kNavigationToolbar = 44;
+
+typedef void(^SingleLevelScrollView)(UIScrollView* scrollView);
+typedef void(^MultiLevelScrollView)(UIScrollView* firstLevelScrollView, UIScrollView* secondLevelScrollView);
+typedef void(^NoScrollView)();
 
 @interface AXStretchableHeaderTabViewController ()
 
@@ -54,6 +59,7 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
   
   [_tabBar sizeToFit];
   [self.view addSubview:_tabBar];
+
 }
 
 - (void)dealloc
@@ -63,6 +69,12 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
     if (scrollView) {
       [scrollView removeObserver:self forKeyPath:@"contentOffset"];
     }
+      
+    UIScrollView *secondLevelScrollView = [self parentScrollViewWithSubViewController:viewController];
+    if (secondLevelScrollView) {
+        [secondLevelScrollView removeObserver:self forKeyPath:@"contentOffset"];
+    }
+
     [viewController removeFromParentViewController];
   }];
 }
@@ -79,9 +91,10 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
       0.0, 0.0,
       CGRectGetWidth(self.view.bounds), _headerView.maximumOfHeight + _containerView.contentInset.top
     }];
-  
+
     [self layoutHeaderViewAndTabBar];
     [self layoutViewControllers];
+
   }
 }
 
@@ -132,6 +145,10 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
       if (scrollView) {
         [scrollView removeObserver:self forKeyPath:@"contentOffset"];
       }
+      UIScrollView *secondLevelScrollView = [self parentScrollViewWithSubViewController:viewController];
+      if (secondLevelScrollView) {
+          [secondLevelScrollView removeObserver:self forKeyPath:@"contentOffset"];
+      }
       [viewController removeFromParentViewController];
     }];
     
@@ -145,6 +162,10 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
       UIScrollView *scrollView = [self scrollViewWithSubViewController:viewController];
       if (scrollView) {
         [scrollView addObserver:self forKeyPath:@"contentOffset" options:NSKeyValueObservingOptionNew context:nil];
+      }
+      UIScrollView *secondLevelScrollView = [self parentScrollViewWithSubViewController:viewController];
+      if (secondLevelScrollView) {
+        [secondLevelScrollView addObserver:self forKeyPath:@"contentOffset" options:NSKeyValueObservingOptionNew context:nil];
       }
       [self addChildViewController:viewController];
       [tabItems addObject:viewController.tabBarItem];
@@ -169,7 +190,11 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
   
   // Get selected scroll view.
   UIScrollView *scrollView = [self scrollViewWithSubViewController:selectedViewController];
-  
+  UIScrollView *secondLevelScrollView = [self parentScrollViewWithSubViewController:selectedViewController];
+
+  if (secondLevelScrollView) {
+      scrollView = [self currentScrollViewWithMultiLevelViewController:selectedViewController];
+  }
   if (scrollView) {
     // Set header view frame
     CGFloat headerViewHeight = _headerView.maximumOfHeight - (scrollView.contentOffset.y + scrollView.contentInset.top);
@@ -203,8 +228,84 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
     0.0, tabBarY,
     _tabBar.frame.size
   }];
+    
+  if (secondLevelScrollView) {
+      [((UINavigationController*)[selectedViewController childViewControllers][0]).navigationBar setFrame:CGRectMake(0, tabBarY + _tabBar.frame.size.height - kNavigationToolbar, 320, kNavigationToolbar)];
+  }
   
 }
+
+- (void)layoutChangeNavigation
+{
+    UIViewController *selectedViewController = [self selectedViewController];
+    UIScrollView *firstLevelScrollView = [self scrollViewWithSubViewController:selectedViewController];
+    if (!firstLevelScrollView) {
+        return;
+    }
+    UIScrollView *secondLevelScrollView = [self parentScrollViewWithSubViewController:selectedViewController];
+
+    UIScrollView *currentSelectedScrollView = [self currentScrollViewWithMultiLevelViewController:selectedViewController];
+    
+    // Define relative y calculator
+    CGFloat (^calcRelativeY)(CGFloat contentOffsetY, CGFloat contentInsetTop) = ^CGFloat(CGFloat contentOffsetY, CGFloat contentInsetTop) {
+        return _headerView.maximumOfHeight - _headerView.minimumOfHeight - (contentOffsetY + contentInsetTop);
+    };
+    
+    CGFloat relativePositionY = calcRelativeY(currentSelectedScrollView.contentOffset.y, currentSelectedScrollView.contentInset.top);
+    if (relativePositionY > 0) {
+        if (currentSelectedScrollView == firstLevelScrollView) {
+            [secondLevelScrollView setContentOffset:(CGPoint) {currentSelectedScrollView.contentOffset.x, currentSelectedScrollView.contentOffset.y}];
+        } else {
+            [firstLevelScrollView setContentOffset:(CGPoint) {currentSelectedScrollView.contentOffset.x, currentSelectedScrollView.contentOffset.y + kNavigationToolbar}];
+        }
+    } else {
+        CGFloat targetRelativePositionY = 0.0;
+        if (currentSelectedScrollView == firstLevelScrollView) {
+            targetRelativePositionY = calcRelativeY(secondLevelScrollView.contentOffset.y, secondLevelScrollView.contentInset.top);
+        } else {
+            targetRelativePositionY = calcRelativeY(firstLevelScrollView.contentOffset.y, firstLevelScrollView.contentInset.top);
+        }
+        if (targetRelativePositionY > 0) {
+            if (currentSelectedScrollView == firstLevelScrollView) {
+                secondLevelScrollView.contentOffset = (CGPoint){
+                    secondLevelScrollView.contentOffset.x,
+                    -(CGRectGetMaxY(_tabBar.frame) - _containerView.contentInset.top)
+                };
+            } else {
+                firstLevelScrollView.contentOffset = (CGPoint){
+                    firstLevelScrollView.contentOffset.x,
+                    -(CGRectGetMaxY(_tabBar.frame) - _containerView.contentInset.top)
+                };
+            }
+        }
+    }
+    return;
+}
+
+- (CGFloat)calculateNewBottomLevelYOffset {
+    UIViewController *selectedViewController = [self selectedViewController];
+    UIScrollView *firstLevelScrollView = [self scrollViewWithSubViewController:selectedViewController];
+    UIScrollView *secondLevelScrollView = [self parentScrollViewWithSubViewController:selectedViewController];
+    if ([self currentScrollViewWithMultiLevelViewController:selectedViewController] != secondLevelScrollView || !firstLevelScrollView) {
+        return 0;
+    }
+    
+    // Define relative y calculator
+    CGFloat (^calcRelativeY)(CGFloat contentOffsetY, CGFloat contentInsetTop) = ^CGFloat(CGFloat contentOffsetY, CGFloat contentInsetTop) {
+        return _headerView.maximumOfHeight - _headerView.minimumOfHeight - (contentOffsetY + contentInsetTop);
+    };
+    
+    CGFloat relativePositionY = calcRelativeY(secondLevelScrollView.contentOffset.y, secondLevelScrollView.contentInset.top);
+    
+    if (relativePositionY > 0) {
+        return secondLevelScrollView.contentOffset.y;
+    } else {
+        CGFloat targetRelativePositionY = 0.0;
+        targetRelativePositionY = calcRelativeY(firstLevelScrollView.contentOffset.y, firstLevelScrollView.contentInset.top);
+        return -(CGRectGetMaxY(_tabBar.frame) - _containerView.contentInset.top);
+    }
+}
+
 
 - (void)layoutViewControllers
 {
@@ -221,13 +322,22 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
   // Resize sub view controllers
   [_viewControllers enumerateObjectsUsingBlock:^(UIViewController *viewController, NSUInteger idx, BOOL *stop) {
     CGRect newFrame = (CGRect){size.width * idx, 0.0, size};
-    UIScrollView *scrollView = [self scrollViewWithSubViewController:viewController];
-    if (scrollView) {
-      [viewController.view setFrame:newFrame];
-      [scrollView setContentInset:contentInsets];
-    } else {
-      [viewController.view setFrame:UIEdgeInsetsInsetRect(newFrame, contentInsets)];
-    }
+      
+    [self setupScrollViewWithSubViewController:viewController singleLevelBlock:^(UIScrollView *scrollView) {
+        [viewController.view setFrame:newFrame];
+        [scrollView setContentInset:contentInsets];
+    } multiLevelBlock:^(UIScrollView *firstLevelScrollView, UIScrollView *secondLevelScrollView) {
+        if ([self currentScrollViewWithMultiLevelViewController:viewController] != secondLevelScrollView) {
+            [viewController.view setFrame:CGRectMake(newFrame.origin.x, newFrame.origin.y+ kNavigationToolbar, newFrame.size.width, newFrame.size.height)];
+        } else {
+            [viewController.view setFrame:CGRectMake(newFrame.origin.x, newFrame.origin.y, newFrame.size.width, newFrame.size.height)];
+        }
+        
+        [firstLevelScrollView setContentInset:UIEdgeInsetsMake(contentInsets.top, contentInsets.left, contentInsets.bottom + kNavigationToolbar, contentInsets.right)];
+        [secondLevelScrollView setContentInset:UIEdgeInsetsMake(contentInsets.top, contentInsets.left, contentInsets.bottom, contentInsets.right)];
+    } noScrollViewBlock:^{
+        [viewController.view setFrame:UIEdgeInsetsInsetRect(newFrame, contentInsets)];
+    }];
   }];
   [_containerView setContentSize:(CGSize){size.width * _viewControllers.count, 0.0}];
 }
@@ -240,6 +350,10 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
   if (!selectedScrollView) {
     return;
   }
+  UIScrollView *secondLevelSelectedScrollView = [self parentScrollViewWithSubViewController:selectedViewController];
+  if (secondLevelSelectedScrollView) {
+     selectedScrollView = [self currentScrollViewWithMultiLevelViewController:selectedViewController];
+  }
   
   // Define relative y calculator
   CGFloat (^calcRelativeY)(CGFloat contentOffsetY, CGFloat contentInsetTop) = ^CGFloat(CGFloat contentOffsetY, CGFloat contentInsetTop) {
@@ -248,11 +362,13 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
   
   // Adjustment offset or frame for sub views.
   [_viewControllers enumerateObjectsUsingBlock:^(UIViewController *viewController, NSUInteger idx, BOOL *stop) {
+    
+    UIScrollView *targetScrollView = [self scrollViewWithSubViewController:viewController];
+    UIScrollView *secondLevelScrollView = [self parentScrollViewWithSubViewController:viewController];
     if (selectedViewController == viewController) {
       return;
     }
-    
-    UIScrollView *targetScrollView = [self scrollViewWithSubViewController:viewController];
+      
     if ([targetScrollView isKindOfClass:[UIScrollView class]]) {
       // Scroll view
       // -> Adjust offset
@@ -260,8 +376,10 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
       if (relativePositionY > 0) {
         // The header view's height is higher than minimum height.
         // -> Adjust same offset.
-        [targetScrollView setContentOffset:selectedScrollView.contentOffset];
-        
+          [targetScrollView setContentOffset:(CGPoint) {selectedScrollView.contentOffset.x, selectedScrollView.contentOffset.y}];
+          if (secondLevelScrollView) {
+              [secondLevelScrollView setContentOffset:(CGPoint) {selectedScrollView.contentOffset.x, selectedScrollView.contentOffset.y}];
+          }
       } else {
         // The header view height is lower than minimum height.
         // -> Adjust top of scrollview, If target header view's height is higher than minimum height.
@@ -271,6 +389,12 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
             targetScrollView.contentOffset.x,
             -(CGRectGetMaxY(_tabBar.frame) - _containerView.contentInset.top)
           };
+          if (secondLevelScrollView) {
+            secondLevelScrollView.contentOffset = (CGPoint){
+                secondLevelScrollView.contentOffset.x,
+                -(CGRectGetMaxY(_tabBar.frame) - _containerView.contentInset.top)
+            };
+          }
         }
       }
     } else {
@@ -292,6 +416,11 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
   UIViewController *selectedViewController = [self selectedViewController];
   if ([keyPath isEqualToString:@"contentOffset"]) {
     UIScrollView *scrollView = [self scrollViewWithSubViewController:selectedViewController];
+    UIScrollView *secondLevelScrollView = [self parentScrollViewWithSubViewController:selectedViewController];
+    if (secondLevelScrollView) {
+        scrollView = [self currentScrollViewWithMultiLevelViewController:selectedViewController];
+    }
+      
     if (scrollView != object) {
       return;
     }
@@ -341,7 +470,7 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
 - (UIScrollView *)scrollViewWithSubViewController:(UIViewController *)viewController
 {
   if ([viewController respondsToSelector:@selector(stretchableSubViewInSubViewController:)]) {
-    return [(id<AXStretchableSubViewControllerViewSource>)viewController stretchableSubViewInSubViewController:viewController];
+      return [(id<AXStretchableSubViewControllerViewSource>)viewController stretchableSubViewInSubViewController:viewController];
   } else if ([viewController.view isKindOfClass:[UIScrollView class]]) {
     return (id)viewController.view;
   } else {
@@ -349,13 +478,47 @@ static NSString * const AXStretchableHeaderTabViewControllerSelectedIndexKey = @
   }
 }
 
+- (UIScrollView *)parentScrollViewWithSubViewController:(UIViewController *)viewController
+{
+    if ([viewController respondsToSelector:@selector(stretchableParentViewInSubViewController:)]) {
+        return [(id<AXStretchableSubViewControllerViewSource>)viewController stretchableParentViewInSubViewController:viewController];
+    } else {
+        return nil;
+    }
+}
+
+- (UIScrollView *)currentScrollViewWithMultiLevelViewController:(UIViewController *)viewController
+{
+    if ([viewController respondsToSelector:@selector(currentNavigationView:)]) {
+        return [(id<AXStretchableSubViewControllerViewSource>)viewController currentNavigationView:viewController];
+    } else {
+        return nil;
+    }
+}
+
 - (void)changeSelectedIndex:(NSInteger)selectedIndex
 {
   [self willChangeValueForKey:@"selectedIndex"];
   [self willChangeValueForKey:@"selectedViewController"];
   _selectedIndex = selectedIndex;
+  [self layoutHeaderViewAndTabBar];
+  [self layoutViewControllers];
   [self didChangeValueForKey:@"selectedIndex"];
   [self didChangeValueForKey:@"selectedViewController"];
+}
+
+- (void)setupScrollViewWithSubViewController:(UIViewController*)viewController singleLevelBlock:(SingleLevelScrollView)singleLevelBlock multiLevelBlock:(MultiLevelScrollView)multiLevelBlock noScrollViewBlock:(NoScrollView)noScrollViewBlock {
+    UIScrollView *firstLevelScrollView = [self scrollViewWithSubViewController:viewController];
+    if (firstLevelScrollView) {
+        UIScrollView *secondLevelScrollView = [self parentScrollViewWithSubViewController:viewController];
+        if (secondLevelScrollView) {
+            if (multiLevelBlock) multiLevelBlock(firstLevelScrollView, secondLevelScrollView);
+        } else {
+            if (singleLevelBlock) singleLevelBlock(firstLevelScrollView);
+        }
+    } else {
+        if (noScrollViewBlock) noScrollViewBlock();
+    }
 }
 
 @end

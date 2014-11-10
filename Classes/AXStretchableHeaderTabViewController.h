@@ -12,6 +12,8 @@
 @protocol AXStretchableSubViewControllerViewSource <NSObject>
 @optional
 - (UIScrollView *)stretchableSubViewInSubViewController:(id)subViewController;
+- (UIScrollView *)stretchableParentViewInSubViewController:(id)subViewController;
+- (UIScrollView *)currentNavigationView:(UIViewController *)viewController;
 @end
 
 @interface AXStretchableHeaderTabViewController : UIViewController <UIScrollViewDelegate, AXTabBarDelegate>
@@ -28,4 +30,6 @@
 - (void)layoutHeaderViewAndTabBar;
 - (void)layoutViewControllers;
 - (void)layoutSubViewControllerToSelectedViewController;
+- (void)layoutChangeNavigation;
+- (CGFloat)calculateNewBottomLevelYOffset;
 @end
